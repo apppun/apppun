@@ -1,2 +1,43 @@
-<!doctype html>
-<!-- AppPUN rebuilt: login/signup UI removed; app runs directly in guest mode with optional Supabase session sync. -->
+<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AppPUN</title></head><body><div id="boot">Memuat AppPUN…</div><script type="module">
+const SOURCE='https://raw.githubusercontent.com/apppun/apppun/3fc80203bf66b2622bc775a207a42811198cdacb/index.html';
+const SUPABASE_URL='https://rxkumheztyyamchhejlk.supabase.co';
+const SUPABASE_KEY='sb_publishable_cN9rnx7YGQm8a-dfxMQCgw_6Ho1yrzj';
+const src=await (await fetch(SOURCE,{cache:'no-store'})).text();
+const parser=new DOMParser();const doc=parser.parseFromString(src,'text/html');
+const overlay=doc.getElementById('authOverlay');if(overlay)overlay.remove();
+const logout=[...doc.querySelectorAll('[onclick*="handleLogout"]')];logout.forEach(e=>e.remove());
+const scripts=[...doc.querySelectorAll('script[type="module"]')];if(!scripts.length)throw new Error('App source module not found');
+let app=scripts[0].textContent;
+const legacyStart=app.indexOf('        import { initializeApp }');
+const legacyEnd=app.indexOf('        const LOCAL_STORAGE_PREFIX');
+if(legacyStart<0||legacyEnd<0)throw new Error('Legacy backend block not found');
+const backend=`
+        import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+        const supabase=createClient("${SUPABASE_URL}","${SUPABASE_KEY}",{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+        const auth=supabase.auth; const db={__supabase:true};
+        const npwpToEmail=npwp=>String(npwp||'').replace(/\\s+/g,'')+'@umkm-pajak.id';
+        const doc=(_db,collectionName,id)=>({collectionName,id});
+        const collection=(_db,collectionName)=>({collectionName});
+        const setDoc=async(ref,payload)=>{if(ref.collectionName!=='users')throw new Error('Unsupported collection');const state={...payload};delete state.updatedAt;const {error}=await supabase.from('app_state').upsert({user_id:ref.id,state,updated_at:new Date().toISOString()},{onConflict:'user_id'});if(error)throw error;};
+        const onSnapshot=(ref,callback,onError)=>{let active=true;supabase.from('app_state').select('state,updated_at').eq('user_id',ref.id).maybeSingle().then(({data,error})=>{if(!active)return;if(error){onError?.(error);return;}callback({exists:()=>!!data,data:()=>data?.state||{}})}).catch(onError);const channel=supabase.channel('app-state-'+ref.id).on('postgres_changes',{event:'*',schema:'public',table:'app_state',filter:'user_id=eq.'+ref.id},payload=>{if(active&&payload.new?.state)callback({exists:()=>true,data:()=>payload.new.state})}).subscribe();return()=>{active=false;supabase.removeChannel(channel)};};
+        const getCountFromServer=async()=>{const {data,error}=await supabase.rpc('get_public_user_count');if(error)throw error;return {data:()=>({count:Number(data||0)})};};
+`;
+app=app.slice(0,legacyStart)+backend+app.slice(legacyEnd);
+const navStart=app.indexOf('        // Auth navigation:');
+const listenStart=app.indexOf('        function listenToCloudData',navStart);
+if(navStart<0||listenStart<0)throw new Error('Auth bootstrap markers not found');
+const authBootstrap=`
+        // Authentication UI removed. AppPUN opens directly in guest mode; an existing Supabase session is optional for cloud sync.
+        async function applyAuthSession(user){if(cloudSaveTimer){clearTimeout(cloudSaveTimer);cloudSaveTimer=null;}fetchRealUserCount();if(unsubscribeRealtime){unsubscribeRealtime();unsubscribeRealtime=null;}currentUser=user||null;if(!user){currentLocalKey=getLocalStorageKey('guest');window.appState=loadLocalState()||defaultState;initUI();return;}const npwp=(user.user_metadata?.npwp||user.email?.split('@')[0]||'').trim();currentLocalKey=getLocalStorageKey(user.id);const d=document.getElementById('displayUserNpwp'),n=document.getElementById('nomorNPWP');if(d)d.textContent=npwp?`NPWP: ${npwp}`:'Mode Lokal';if(n&&npwp)n.value=npwp;listenToCloudData(user.id,npwp);}
+        async function bootstrapAuth(){try{const {data}=await auth.getSession();await applyAuthSession(data?.session?.user||null);}catch(e){console.warn('Optional Supabase session unavailable; guest mode enabled.',e);await applyAuthSession(null);}auth.onAuthStateChange((_event,session)=>applyAuthSession(session?.user||null));}
+        bootstrapAuth();
+`;
+app=app.slice(0,navStart)+authBootstrap+app.slice(listenStart);
+app=app.replace(/window\.showAuthPage\s*=\s*function\(page\)\s*\{[\s\S]*?\n\s*\};\n/,'');
+app=app.replace(/window\.handleLogin\s*=\s*async function\(e\)\s*\{[\s\S]*?\n\s*\};\n/,'');
+app=app.replace(/window\.handleSignup\s*=\s*async function\(e\)\s*\{[\s\S]*?\n\s*\};\n/,'');
+app=app.replace(/window\.handleForgot\s*=\s*async function\(e\)\s*\{[\s\S]*?\n\s*\};\n/,'');
+app=app.replace(/window\.handleLogout\s*=\s*async function\(\)\s*\{[\s\S]*?\n\s*\};\n/,'');
+for(const el of scripts)el.remove();
+const ns=doc.createElement('script');ns.type='module';ns.textContent=app;doc.body.appendChild(ns);document.documentElement.replaceWith(doc.documentElement);
+</script></body></html>
