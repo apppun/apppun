@@ -1,1 +1,38 @@
-<!doctype html>PLACEHOLDER
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AppPUN</title>
+</head>
+<body><div id="boot">Memuat AppPUN…</div>
+<script type="module">
+const SOURCE='https://raw.githubusercontent.com/apppun/apppun/3fc80203bf66b2622bc775a207a42811198cdacb/index.html';
+const timeout=ms=>new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),ms));
+try {
+  const response=await Promise.race([fetch(SOURCE,{cache:'no-store'}),timeout(8000)]);
+  if(!response.ok) throw new Error('Source HTTP '+response.status);
+  const source=await Promise.race([response.text(),timeout(8000)]);
+  const doc=new DOMParser().parseFromString(source,'text/html');
+  const overlay=doc.getElementById('authOverlay'); if(overlay) overlay.remove();
+  doc.querySelectorAll('[onclick*="handleLogout"]').forEach(el=>el.remove());
+  const script=[...doc.querySelectorAll('script[type="module"]')].find(s=>s.textContent.includes('const supabase'));
+  if(!script) throw new Error('App module not found');
+  let code=script.textContent;
+  const authStart=code.indexOf('        async function handleAuthenticatedUser(user) {');
+  const cloudStart=code.indexOf('        async function listenToCloudData(uid, npwp) {');
+  if(authStart>=0 && cloudStart>authStart){
+    code=code.slice(0,authStart)+`        // Guest-first mode: authentication UI/session removed.\n        currentUser = null;\n        currentLocalKey = getLocalStorageKey('guest');\n        try { const cached=localStorage.getItem(currentLocalKey); window.appState=cached?JSON.parse(cached):defaultState; } catch (_) { window.appState=defaultState; }\n        const displayUser=document.getElementById('displayUserNpwp'); if(displayUser) displayUser.textContent='Mode Lokal';\n        const syncText=document.getElementById('syncStatusText'); if(syncText) syncText.textContent='Tersimpan lokal';\n        fetchRealUserCount();\n        initUI();\n\n`+code.slice(cloudStart);
+  }
+  const handlersStart=code.indexOf('        window.showAuthPage = function(page) {');
+  const toggleStart=code.indexOf('        /* FUNGSI TOGGLE MODE',handlersStart);
+  if(handlersStart>=0 && toggleStart>handlersStart) code=code.slice(0,handlersStart)+code.slice(toggleStart);
+  code=code.replace(/document\.getElementById\('authOverlay'\)[^;]*;/g,'');
+  code=code.replace(/window\.saveDataToCloud = function\(\) \{[\s\S]*?\n        \};\n\n        \/\* FUNGSI TOGGLE MODE/,
+`window.saveDataToCloud = function() { saveLocalState(); setSyncIndicatorStatus(false); const t=document.getElementById('syncStatusText'); if(t)t.textContent='Tersimpan lokal'; };\n\n        /* FUNGSI TOGGLE MODE`);
+  script.remove();
+  const s=doc.createElement('script'); s.type='module'; s.textContent=code; doc.body.appendChild(s);
+  document.documentElement.replaceWith(doc.documentElement);
+} catch(e) {
+  document.getElementById('boot').textContent='AppPUN gagal dimuat. Silakan refresh.';
+  console.error(e);
+}
+</script></body></html>
