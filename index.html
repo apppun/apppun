@@ -1,28 +1,18 @@
-<!doctype html>
-<html lang="id">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AppPUN</title></head>
-<body><div id="boot">Memuat AppPUN…</div>
-<script type="module">
+<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AppPUN</title></head><body><div id="boot">Memuat AppPUN…</div><script type="module">
 const SOURCE='https://raw.githubusercontent.com/apppun/apppun/3fc80203bf66b2622bc775a207a42811198cdacb/index.html';
-const SOURCE_BASE='https://raw.githubusercontent.com/apppun/apppun/3fc80203bf66b2622bc775a207a42811198cdacb/';
-const URL='https://rxkumheztyyamchhejlk.supabase.co';
-const KEY='sb_publishable_cN9rnx7YGQm8a-dfxMQCgw_6Ho1yrzj';
-const source=await (await fetch(SOURCE,{cache:'no-store'})).text();
-const d=new DOMParser().parseFromString(source,'text/html');
-for(const el of [...d.querySelectorAll('[src],[href]')]){
-  const attr=el.hasAttribute('src')?'src':'href', value=el.getAttribute(attr);
-  if(value && !/^(?:[a-z]+:|\/\/|#|data:)/i.test(value)) el.setAttribute(attr,SOURCE_BASE+value.replace(/^\.\//,''));
-}
-const old=[...d.querySelectorAll('script[type="module"]')][0];
-if(!old) throw new Error('App module missing');
-let code=old.textContent;
-const start=code.indexOf('        import { initializeApp }');
-const end=code.indexOf('        const LOCAL_STORAGE_PREFIX');
-if(start<0||end<0) throw new Error('Backend block missing');
-const bridge=`
+const SUPABASE_URL='https://rxkumheztyyamchhejlk.supabase.co';
+const SUPABASE_KEY='sb_publishable_cN9rnx7YGQm8a-dfxMQCgw_6Ho1yrzj';
+const src=await (await fetch(SOURCE,{cache:'no-store'})).text();
+const parser=new DOMParser(); const doc=parser.parseFromString(src,'text/html');
+const scripts=[...doc.querySelectorAll('script[type="module"]')];
+if(!scripts.length) throw new Error('App source module not found');
+let appScript=scripts[0].textContent;
+const start=appScript.indexOf('        import { initializeApp }');
+const end=appScript.indexOf('        const LOCAL_STORAGE_PREFIX');
+if(start<0||end<0) throw new Error('Legacy backend block not found');
+const backend=`
         import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-        const supabase = createClient("${URL}", "${KEY}");
-        const mapUser = (u) => u ? { ...u, uid: u.id } : null;
+        const supabase = createClient("${SUPABASE_URL}", "${SUPABASE_KEY}");
         const initializeApp = (config) => config;
         const getAuth = () => supabase.auth;
         const getFirestore = () => ({ __supabase: true });
@@ -30,55 +20,42 @@ const bridge=`
         const db = { __supabase: true };
         const doc = (_db, collectionName, id) => ({ collectionName, id });
         const collection = (_db, collectionName) => ({ collectionName });
-        const signInWithEmailAndPassword = async (_auth, email, password) => {
-            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-            if (error) throw error;
-            return { user: mapUser(data.user) };
-        };
-        const createUserWithEmailAndPassword = async (_auth, email, password) => {
-            const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { npwp: email.split('@')[0] } } });
-            if (error) throw error;
-            return { user: mapUser(data.user) };
-        };
-        const signOut = async () => { const { error } = await supabase.auth.signOut(); if (error) throw error; };
-        const onAuthStateChanged = (_auth, callback) => {
-            supabase.auth.getSession().then(({data}) => callback(mapUser(data.session?.user)));
-            const { data } = supabase.auth.onAuthStateChange((_event, session) => callback(mapUser(session?.user)));
-            return () => data.subscription.unsubscribe();
-        };
-        const sendPasswordResetEmail = async (_auth, email) => {
-            const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
-            if (error) throw error;
-        };
-        const getCountFromServer = async (ref) => {
-            const { count, error } = await supabase.from(ref.collectionName === 'users' ? 'profiles' : ref.collectionName).select('id', { count: 'exact', head: true });
-            if (error) throw error;
-            return { data: () => ({ count: count || 0 }) };
-        };
-        const setDoc = async (ref, payload, options = {}) => {
-            if (ref.collectionName !== 'users') throw new Error('Unsupported collection');
-            const state = { ...payload };
-            delete state.updatedAt;
-            const { error } = await supabase.from('app_state').upsert({ user_id: ref.id, state, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
-            if (error) throw error;
-        };
-        const onSnapshot = (ref, callback, onError) => {
-            let active = true;
-            supabase.from('app_state').select('state,updated_at').eq('user_id', ref.id).maybeSingle().then(({data,error}) => {
-                if(!active) return;
-                if(error) return onError?.(error);
-                callback({ exists: () => !!data, data: () => data?.state || {} });
-            }).catch(e => onError?.(e));
-            const channel=supabase.channel('app-state-'+ref.id).on('postgres_changes',{event:'*',schema:'public',table:'app_state',filter:'user_id=eq.'+ref.id},payload=>{
-                if(!active||!payload.new?.state) return;
-                callback({ exists: () => true, data: () => payload.new.state });
-            }).subscribe();
-            return () => { active=false; supabase.removeChannel(channel); };
-        };
+        const signInWithEmailAndPassword = async (_auth, email, password) => { const { data, error } = await supabase.auth.signInWithPassword({ email, password }); if(error) throw error; return { user: data.user }; };
+        const createUserWithEmailAndPassword = async (_auth, email, password) => { const { data, error } = await supabase.auth.signUp({ email, password, options:{ data:{ npwp: email.split('@')[0] } } }); if(error) throw error; return { user:data.user }; };
+        const signOut = async () => { const { error } = await supabase.auth.signOut(); if(error) throw error; };
+        const onAuthStateChanged = (_auth, callback) => { supabase.auth.getSession().then(({data})=>callback(data.session?.user||null)); const {data}=supabase.auth.onAuthStateChange((_event,session)=>callback(session?.user||null)); return ()=>data.subscription.unsubscribe(); };
+        const sendPasswordResetEmail = async (_auth,email) => { const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin}); if(error) throw error; };
+        const getCountFromServer = async (_ref) => { const {data,error}=await supabase.rpc('get_public_user_count'); if(error) throw error; return { data:()=>({count:Number(data||0)}) }; };
+        const setDoc = async (ref,payload) => { if(ref.collectionName!=='users') throw new Error('Unsupported collection'); const state={...payload}; delete state.updatedAt; const {error}=await supabase.from('app_state').upsert({user_id:ref.id,state,updated_at:new Date().toISOString()},{onConflict:'user_id'}); if(error) throw error; };
+        const onSnapshot = (ref,callback,onError) => { let active=true; supabase.from('app_state').select('state,updated_at').eq('user_id',ref.id).maybeSingle().then(({data,error})=>{if(!active)return;if(error)return onError?.(error);callback({exists:()=>!!data,data:()=>data?.state||{}})}).catch(e=>onError?.(e)); const channel=supabase.channel('app-state-'+ref.id).on('postgres_changes',{event:'*',schema:'public',table:'app_state',filter:'user_id=eq.'+ref.id},payload=>{if(active&&payload.new?.state)callback({exists:()=>true,data:()=>payload.new.state})}).subscribe(); return ()=>{active=false;supabase.removeChannel(channel)}; };
 `;
-code=bridge+code.slice(end);
-old.remove();
-for(const el of [...d.querySelectorAll('script')]) if(el.textContent.includes('pwabuilder')||el.src.includes('firebase')) el.remove();
-const s=d.createElement('script');s.type='module';s.textContent=code;d.body.appendChild(s);
-document.documentElement.replaceWith(d.documentElement);
+appScript=appScript.slice(0,start)+backend+appScript.slice(end);
+appScript=appScript.replace(/        async function fetchRealUserCount\(\) \{[\s\S]*?\n        \}\n\n        function getActiveStore\(\)/,`        async function fetchRealUserCount() {
+            const labels = document.querySelectorAll('.real-user-count-label');
+            try {
+                const snapshot = await getCountFromServer(collection(db, 'users'));
+                const formatted = new Intl.NumberFormat('id-ID').format(Number(snapshot.data().count || 0));
+                labels.forEach(el => el.textContent = formatted + ' Wajib Pajak Terdaftar');
+            } catch (err) {
+                console.warn('Gagal mengambil jumlah pengguna dari Supabase:', err);
+                labels.forEach(el => el.textContent = '0 Wajib Pajak Terdaftar');
+            }
+        }
+
+        function getActiveStore()`);
+appScript=appScript.replace(/        if \(auth\) \{/,`        document.addEventListener('click', (event) => {
+            const link = event.target.closest('a');
+            if (!link) return;
+            const text = link.textContent.trim();
+            let page = link.dataset.authPage;
+            if (!page && text.includes('Daftar Akun Baru')) page = 'signup';
+            else if (!page && text.includes('Lupa Password')) page = 'forgot';
+            else if (!page && text.includes('Masuk di sini')) page = 'login';
+            if (page) { event.preventDefault(); window.showAuthPage(page); }
+        });
+
+        if (auth) {`);
+for(const el of scripts) el.remove();
+const newScript=doc.createElement('script');newScript.type='module';newScript.textContent=appScript;doc.body.appendChild(newScript);
+document.documentElement.replaceWith(doc.documentElement);
 </script></body></html>
