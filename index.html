@@ -645,7 +645,7 @@
         <div class="dashboard-user-banner">
             <div class="banner-text">
                 <i class="fa-solid fa-chart-line" style="color: var(--primary); font-size: 1.2rem;"></i>
-                <span>Komunitas Wajib Pajak AppPUN Terdaftar (Real-time Supabase)</span>
+                <span>Komunitas Wajib Pajak AppPUN Terdaftar (Real-time Firestore)</span>
             </div>
             <div class="banner-stat">
                 <i class="fa-solid fa-users" style="color: #10b981;"></i> <span class="real-user-count-label">Memuat data...</span>
@@ -1240,22 +1240,39 @@
         </div>
     </div>
 
-    <!-- Script Module Supabase & DJP XML Core -->
+    <!-- Script Module Firebase & DJP XML Core -->
     <script type="module">
-        import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, getCountFromServer } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        const SUPABASE_URL = "https://rxkumheztyyamchhejlk.supabase.co";
-        const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_cN9rnx7YGQm8a-dfxMQCgw_6Ho1yrzj";
-        const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-            auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
-        });
+        const firebaseConfig = {
+            apiKey: "AIzaSyDdmiCbU40lfgHdXEpvbmYdcxonIao9CC4",
+            authDomain: "app-pajak-umkm-npwp.firebaseapp.com",
+            projectId: "app-pajak-umkm-npwp",
+            storageBucket: "app-pajak-umkm-npwp.firebasestorage.app",
+            messagingSenderId: "583484388383",
+            appId: "1:583484388383:web:f37687349961b2ac08112a"
+        };
 
         const LOCAL_STORAGE_PREFIX = "apppun_tax_manager_local_state";
-        function getLocalStorageKey(uid) { return uid ? `${LOCAL_STORAGE_PREFIX}_${uid}` : `${LOCAL_STORAGE_PREFIX}_guest`; }
+        function getLocalStorageKey(uid) {
+            return uid ? `${LOCAL_STORAGE_PREFIX}_${uid}` : `${LOCAL_STORAGE_PREFIX}_guest`;
+        }
+
+        let app, auth, db;
+        try {
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+        } catch (e) {
+            console.warn("Firebase Init Offline Fallback Active:", e);
+        }
+
         const npwpToEmail = (npwp) => `${npwp.trim()}@umkm-pajak.id`;
 
         let currentUser = null;
-        let currentLocalKey = getLocalStorageKey(null);
+        let currentLocalKey = null;
         let unsubscribeRealtime = null;
         let isRemoteUpdate = false;
         let chartInstance = null;
@@ -1265,97 +1282,315 @@
         const monthOrder = { 'Januari': 1, 'Februari': 2, 'Maret': 3, 'April': 4, 'Mei': 5, 'Juni': 6, 'Juli': 7, 'Agustus': 8, 'September': 9, 'Oktober': 10, 'November': 11, 'Desember': 12 };
 
         const defaultState = {
-            entityMode: "umkm", activeStoreId: "store_default",
-            personalProfile: { nama: "", tipePekerjaan: "karyawan", statusPTKP: "54000000", freelanceNorma: "0.5", jenisKendaraan: "mobil", njkb: 0, kepemilikan: "0.02", selectedYear: 2026, activeTabIndex: 0, monthsData: [{ name: 'Januari', year: 2026, gajiPokok: 0, tunjangan: 0, iuran: 0, freelanceBruto: 0 }] },
-            stores: [{ id: "store_default", profile: { namaUsaha: "", npwp: "", kodeCabang: "000000", jenisWP: "OP", kategoriUsaha: "Retail & Kelontong", targetOmzet: 500000000 }, selectedYear: 2026, activeTabIndex: 0, monthsData: [{ name: 'Januari', year: 2026, beban: 0, transactions: [{ id: 'tx_1', transactionDate: '2026-01-15', customer: 'Pelanggan Umum', billing: '', discount: 0, items: [{ name: 'Penjualan Barang / Jasa', price: 0, qty: 1 }], omzet: 0 }], omzet: 0 }] }]
+            entityMode: "umkm",
+            activeStoreId: "store_default",
+            personalProfile: {
+                nama: "Eugene Siby", tipePekerjaan: "freelance", statusPTKP: "54000000",
+                freelanceNorma: "0.5", jenisKendaraan: "mobil", njkb: 150000000, kepemilikan: "0.02",
+                selectedYear: 2026, activeTabIndex: 0,
+                monthsData: [
+                    { name: 'Januari', year: 2026, gajiPokok: 10000000, tunjangan: 2000000, iuran: 200000, freelanceBruto: 15000000 },
+                    { name: 'Februari', year: 2026, gajiPokok: 10000000, tunjangan: 2000000, iuran: 200000, freelanceBruto: 18000000 }
+                ]
+            },
+            stores: [{
+                id: "store_default",
+                profile: { 
+                    namaUsaha: "Kopi Berkah Nusantara", 
+                    npwp: "7326011206010003", 
+                    kodeCabang: "000000", 
+                    jenisWP: "OP", 
+                    kategoriUsaha: "Kuliner / Makanan & Minuman", 
+                    targetOmzet: 500000000 
+                },
+                selectedYear: 2026, activeTabIndex: 0,
+                monthsData: [
+                    { 
+                        name: 'Januari', 
+                        year: 2026, 
+                        beban: 1200000,
+                        transactions: [
+                            {
+                                id: 'tx_1',
+                                transactionDate: '2026-01-15', 
+                                customer: 'Alisha', 
+                                billing: 'STRUK-ABC',
+                                discount: 25000,
+                                items: [
+                                    { name: 'Lego City Undercover Cart', price: 600000, qty: 5 },
+                                    { name: 'Minecraft', price: 500000, qty: 2 }
+                                ],
+                                omzet: 3975000
+                            }
+                        ],
+                        omzet: 3975000
+                    }
+                ]
+            }]
         };
 
         function buildDefaultState(npwp, namaUsaha) {
             const year = new Date().getFullYear();
-            return { entityMode: "umkm", activeStoreId: "store_1", personalProfile: { nama: namaUsaha || "", tipePekerjaan: "karyawan", statusPTKP: "54000000", freelanceNorma: "0.5", jenisKendaraan: "mobil", njkb: 0, kepemilikan: "0.02", selectedYear: year, activeTabIndex: 0, monthsData: [{ name: 'Januari', year, gajiPokok: 0, tunjangan: 0, iuran: 0, freelanceBruto: 0 }] }, stores: [{ id: "store_1", profile: { namaUsaha: namaUsaha || "", npwp: npwp || "", kodeCabang: "000000", jenisWP: "OP", kategoriUsaha: "Retail & Kelontong", targetOmzet: 500000000 }, selectedYear: year, activeTabIndex: 0, monthsData: [{ name: 'Januari', year, beban: 0, transactions: [{ id: 'tx_' + Date.now(), transactionDate: `${year}-01-15`, customer: 'Pelanggan Umum', billing: '', discount: 0, items: [{ name: 'Penjualan Barang / Jasa', price: 0, qty: 1 }], omzet: 0 }], omzet: 0 }] }] };
+            return {
+                entityMode: "umkm",
+                activeStoreId: "store_1",
+                personalProfile: {
+                    nama: namaUsaha || "", tipePekerjaan: "karyawan", statusPTKP: "54000000",
+                    freelanceNorma: "0.5", jenisKendaraan: "mobil", njkb: 0, kepemilikan: "0.02",
+                    selectedYear: year, activeTabIndex: 0,
+                    monthsData: [{ name: 'Januari', year: year, gajiPokok: 0, tunjangan: 0, iuran: 0, freelanceBruto: 0 }]
+                },
+                stores: [{
+                    id: "store_1",
+                    profile: { 
+                        namaUsaha: namaUsaha || "", 
+                        npwp: npwp || "7326011206010003", 
+                        kodeCabang: "000000", 
+                        jenisWP: "OP", 
+                        kategoriUsaha: "Retail & Kelontong", 
+                        targetOmzet: 500000000 
+                    },
+                    selectedYear: year, activeTabIndex: 0,
+                    monthsData: [{ 
+                        name: 'Januari', year: year, 
+                        beban: 0,
+                        transactions: [{
+                            id: 'tx_' + Date.now(),
+                            transactionDate: `${year}-01-15`, 
+                            customer: 'Pelanggan Umum', 
+                            billing: '', discount: 0,
+                            items: [{ name: 'Penjualan Barang / Jasa', price: 0, qty: 1 }],
+                            omzet: 0 
+                        }],
+                        omzet: 0 
+                    }]
+                }]
+            };
         }
 
         window.appState = defaultState;
 
         async function fetchRealUserCount() {
+            if (!db) return;
             try {
-                const { count, error } = await supabase.from('profiles').select('id', { count: 'exact', head: true });
-                const total = error ? 0 : (count || 0);
-                const formatted = new Intl.NumberFormat('id-ID').format(total);
-                document.querySelectorAll('.real-user-count-label').forEach(el => el.textContent = `${formatted} Wajib Pajak Terdaftar`);
+                const usersCol = collection(db, "users");
+                const snapshot = await getCountFromServer(usersCol);
+                const totalRealUsers = snapshot.data().count;
+                const formatted = new Intl.NumberFormat('id-ID').format(totalRealUsers);
+
+                document.querySelectorAll('.real-user-count-label').forEach(el => {
+                    el.textContent = `${formatted} Wajib Pajak Terdaftar`;
+                });
             } catch (err) {
-                document.querySelectorAll('.real-user-count-label').forEach(el => el.textContent = '0 Wajib Pajak Terdaftar');
+                console.warn("Gagal mengambil jumlah pengguna asli dari Firestore:", err);
+                document.querySelectorAll('.real-user-count-label').forEach(el => {
+                    el.textContent = `1+ Wajib Pajak Terdaftar`;
+                });
             }
         }
 
         function getActiveStore() {
             let store = window.appState.stores.find(s => s.id === window.appState.activeStoreId);
-            if (!store) { store = window.appState.stores[0]; window.appState.activeStoreId = store ? store.id : "store_default"; }
+            if (!store) {
+                store = window.appState.stores[0];
+                window.appState.activeStoreId = store ? store.id : "store_default";
+            }
             return store;
         }
-        function saveLocalState() { if (!currentLocalKey) return; try { localStorage.setItem(currentLocalKey, JSON.stringify(window.appState)); } catch (e) {} }
-        function setSyncIndicatorStatus(syncing) { const dot=document.getElementById('syncStatusDot'), txt=document.getElementById('syncStatusText'); if(dot&&txt){dot.className=syncing?'sync-dot syncing':'sync-dot';txt.textContent=syncing?'Menyinkronkan...':'Tersinkronisasi';} }
-        function setSyncErrorStatus(){ const dot=document.getElementById('syncStatusDot'),txt=document.getElementById('syncStatusText'); if(dot&&txt){dot.className='sync-dot sync-error';txt.textContent='Sync gagal';} }
 
-        async function loadCloudState(user) {
-            currentUser = user; currentLocalKey = getLocalStorageKey(user.id);
-            const npwp = user.user_metadata?.npwp || user.email?.split('@')[0] || '';
-            document.getElementById('authOverlay').style.display = 'none';
-            document.getElementById('displayUserNpwp').textContent = npwp ? `NPWP: ${npwp}` : 'Pengguna';
-            const npwpInput=document.getElementById('nomorNPWP'); if(npwpInput) npwpInput.value=npwp;
+        function saveLocalState() {
+            if (!currentLocalKey) return;
             try {
-                const { data, error } = await supabase.from('app_state').select('state').eq('user_id', user.id).maybeSingle();
-                if(error) throw error;
-                if(data?.state) window.appState = data.state;
-                else { window.appState = buildDefaultState(npwp, user.user_metadata?.full_name || ''); await saveCloudState(true); }
-                saveLocalState(); initUI();
-            } catch(err) {
-                console.warn('Supabase load error:', err); setSyncErrorStatus();
-                try { window.appState = JSON.parse(localStorage.getItem(currentLocalKey)) || buildDefaultState(npwp, user.user_metadata?.full_name || ''); } catch(e){ window.appState=buildDefaultState(npwp,''); }
-                initUI();
+                localStorage.setItem(currentLocalKey, JSON.stringify(window.appState));
+            } catch (e) {
+                console.error("Local save error:", e);
             }
-            setSyncIndicatorStatus(false);
         }
 
-        async function saveCloudState(immediate=false) {
-            saveLocalState();
-            if(isRemoteUpdate || !currentUser) return;
-            if(cloudSaveTimer) clearTimeout(cloudSaveTimer);
-            const run = async () => {
-                if(!currentUser) return;
-                setSyncIndicatorStatus(true);
-                const { error } = await supabase.from('app_state').upsert({ user_id: currentUser.id, state: window.appState, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
-                if(error){ console.error('Supabase save error:',error); setSyncErrorStatus(); } else setSyncIndicatorStatus(false);
-            };
-            if(immediate) await run(); else cloudSaveTimer=setTimeout(run,700);
-        }
-        window.saveDataToCloud = () => saveCloudState(false);
-
-        function subscribeCloud(userId){
-            if(unsubscribeRealtime) unsubscribeRealtime();
-            unsubscribeRealtime = supabase.channel(`app_state_${userId}`).on('postgres_changes',{event:'*',schema:'public',table:'app_state',filter:`user_id=eq.${userId}`},payload=>{
-                if(payload.new?.state){ isRemoteUpdate=true; window.appState=payload.new.state; saveLocalState(); initUI(); isRemoteUpdate=false; }
-            }).subscribe();
+        function setSyncIndicatorStatus(syncing) {
+            const dot = document.getElementById('syncStatusDot');
+            const txt = document.getElementById('syncStatusText');
+            if (dot && txt) {
+                if (syncing) {
+                    dot.className = 'sync-dot syncing';
+                    txt.textContent = 'Menyinkronkan...';
+                } else {
+                    dot.className = 'sync-dot';
+                    txt.textContent = 'Tersinkronisasi';
+                }
+            }
         }
 
-        supabase.auth.onAuthStateChange((event, session) => {
-            if(cloudSaveTimer){clearTimeout(cloudSaveTimer);cloudSaveTimer=null;}
+        let syncErrorShown = false;
+        function setSyncErrorStatus(reason) {
+            const dot = document.getElementById('syncStatusDot');
+            const txt = document.getElementById('syncStatusText');
+            if (dot && txt) {
+                dot.className = 'sync-dot sync-error';
+                txt.textContent = reason === 'permission-denied' ? 'Sync ditolak' : 'Sync gagal';
+            }
+            if (!syncErrorShown) {
+                syncErrorShown = true;
+                if (reason === 'permission-denied') {
+                    alert("Sinkronisasi cloud DITOLAK oleh Firestore Security Rules.\n\nData tersimpan secara lokal.");
+                }
+            }
+        }
+
+        if (auth) {
+            onAuthStateChanged(auth, (user) => {
+                if (cloudSaveTimer) { clearTimeout(cloudSaveTimer); cloudSaveTimer = null; }
+                fetchRealUserCount();
+                if (user) {
+                    currentUser = user;
+                    const npwp = user.email.split('@')[0];
+                    currentLocalKey = getLocalStorageKey(user.uid);
+
+                    document.getElementById('authOverlay').style.display = 'none';
+                    document.getElementById('displayUserNpwp').textContent = `NPWP: ${npwp}`;
+                    document.getElementById('nomorNPWP').value = npwp;
+
+                    listenToCloudData(user.uid, npwp);
+                } else {
+                    if (unsubscribeRealtime) unsubscribeRealtime();
+                    currentUser = null;
+                    currentLocalKey = null;
+                    window.appState = defaultState;
+                    document.getElementById('authOverlay').style.display = 'flex';
+                    window.showAuthPage('login');
+                }
+            });
+        } else {
+            currentLocalKey = getLocalStorageKey(null);
+            try {
+                window.appState = JSON.parse(localStorage.getItem(currentLocalKey)) || defaultState;
+            } catch (e) {
+                window.appState = defaultState;
+            }
+            document.getElementById('authOverlay').style.display = 'none';
+            initUI();
             fetchRealUserCount();
-            if(session?.user){
-                loadCloudState(session.user).then(()=>subscribeCloud(session.user.id));
-            } else {
-                if(unsubscribeRealtime) unsubscribeRealtime(); unsubscribeRealtime=null; currentUser=null; currentLocalKey=getLocalStorageKey(null);
-                try { window.appState=JSON.parse(localStorage.getItem(currentLocalKey))||defaultState; } catch(e){window.appState=defaultState;}
-                const overlay=document.getElementById('authOverlay'); if(overlay) overlay.style.display='flex';
-                window.showAuthPage('login'); initUI();
-            }
-        });
+        }
 
-        window.showAuthPage = function(page){ document.getElementById('loginCard').style.display=page==='login'?'block':'none'; document.getElementById('signupCard').style.display=page==='signup'?'block':'none'; document.getElementById('forgotCard').style.display=page==='forgot'?'block':'none'; };
-        window.handleLogin = async function(e){ e.preventDefault(); const npwp=document.getElementById('loginNpwp').value.trim(); const password=document.getElementById('loginPassword').value; if(!/^\d{16}$/.test(npwp)) return alert('NIK/NPWP harus 16 digit!'); const {error}=await supabase.auth.signInWithPassword({email:npwpToEmail(npwp),password}); if(error) alert('Gagal masuk: '+error.message); };
-        window.handleSignup = async function(e){ e.preventDefault(); const npwp=document.getElementById('signupNpwp').value.trim(), namaUsaha=document.getElementById('signupNamaUsaha').value.trim(), phone=document.getElementById('signupPhone').value.trim(), password=document.getElementById('signupPassword').value; if(!/^\d{16}$/.test(npwp)) return alert('NIK/NPWP harus 16 digit!'); if(password.length<6) return alert('Password minimal 6 karakter!'); const {data,error}=await supabase.auth.signUp({email:npwpToEmail(npwp),password,options:{data:{npwp,full_name:namaUsaha,phone}}}); if(error) return alert('Gagal mendaftar: '+error.message); if(data.user){ const initialData=buildDefaultState(npwp,namaUsaha); initialData.stores[0].profile.phone=phone; window.appState=initialData; currentUser=data.user; currentLocalKey=getLocalStorageKey(data.user.id); saveLocalState(); if(data.session) await saveCloudState(true); await supabase.from('profiles').upsert({id:data.user.id,full_name:namaUsaha,npwp,tax_type:'OP',updated_at:new Date().toISOString()}); fetchRealUserCount(); alert(data.session?'Pendaftaran berhasil!':'Pendaftaran berhasil. Silakan verifikasi email Anda.'); } };
-        window.handleForgot = async function(e){ e.preventDefault(); const npwp=document.getElementById('forgotNpwp').value.trim(); if(!/^\d{16}$/.test(npwp)) return alert('NIK/NPWP harus 16 digit!'); const {error}=await supabase.auth.resetPasswordForEmail(npwpToEmail(npwp),{redirectTo:window.location.origin+window.location.pathname}); if(error) alert('Reset gagal: '+error.message); else { alert('Instruksi reset password dikirim.'); window.showAuthPage('login'); } };
-        window.handleLogout = async function(){ if(confirm('Keluar dari akun?')) { if(cloudSaveTimer) clearTimeout(cloudSaveTimer); await supabase.auth.signOut(); location.reload(); } };
+        function listenToCloudData(uid, npwp) {
+            if (!db) return;
+            setSyncIndicatorStatus(true);
+
+            const docRef = doc(db, "users", uid);
+            unsubscribeRealtime = onSnapshot(docRef, (docSnap) => {
+                setSyncIndicatorStatus(false);
+                syncErrorShown = false;
+                if (docSnap.exists()) {
+                    isRemoteUpdate = true;
+                    window.appState = docSnap.data();
+                    saveLocalState();
+                    initUI();
+                    isRemoteUpdate = false;
+                } else {
+                    const freshState = buildDefaultState(npwp);
+                    isRemoteUpdate = true;
+                    window.appState = freshState;
+                    saveLocalState();
+                    initUI();
+                    isRemoteUpdate = false;
+                    setDoc(docRef, { ...freshState, updatedAt: Date.now() });
+                }
+            }, (error) => {
+                console.error("Realtime sync error:", error);
+                setSyncIndicatorStatus(false);
+                if (error && error.code === 'permission-denied') {
+                    setSyncErrorStatus('permission-denied');
+                }
+                if (currentLocalKey) {
+                    try {
+                        const cached = localStorage.getItem(currentLocalKey);
+                        window.appState = cached ? JSON.parse(cached) : buildDefaultState(npwp);
+                    } catch (e) {
+                        window.appState = buildDefaultState(npwp);
+                    }
+                    initUI();
+                }
+            });
+        }
+
+        window.saveDataToCloud = function() {
+            saveLocalState();
+            if (isRemoteUpdate || !currentUser || !db) return;
+
+            setSyncIndicatorStatus(true);
+            if (cloudSaveTimer) clearTimeout(cloudSaveTimer);
+            cloudSaveTimer = setTimeout(() => {
+                cloudSaveTimer = null;
+                if (!currentUser || !db) return;
+                const docRef = doc(db, "users", currentUser.uid);
+                const payload = { ...window.appState, updatedAt: Date.now() };
+                setDoc(docRef, payload, { merge: true })
+                    .then(() => { setSyncIndicatorStatus(false); syncErrorShown = false; })
+                    .catch(err => {
+                        console.error("Cloud Save Error:", err);
+                        setSyncIndicatorStatus(false);
+                        if (err && err.code === 'permission-denied') {
+                            setSyncErrorStatus('permission-denied');
+                        }
+                    });
+            }, 700);
+        };
+
+        window.showAuthPage = function(page) {
+            document.getElementById('loginCard').style.display = page === 'login' ? 'block' : 'none';
+            document.getElementById('signupCard').style.display = page === 'signup' ? 'block' : 'none';
+            document.getElementById('forgotCard').style.display = page === 'forgot' ? 'block' : 'none';
+        };
+
+        window.handleLogin = async function(e) {
+            e.preventDefault();
+            const npwp = document.getElementById('loginNpwp').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            if (npwp.length !== 16) return alert("NIK/NPWP harus 16 digit!");
+            try {
+                await signInWithEmailAndPassword(auth, npwpToEmail(npwp), password);
+            } catch (err) { alert("Gagal masuk: " + err.message); }
+        };
+
+        window.handleSignup = async function(e) {
+            e.preventDefault();
+            const npwp = document.getElementById('signupNpwp').value.trim();
+            const namaUsaha = document.getElementById('signupNamaUsaha').value.trim();
+            const phone = document.getElementById('signupPhone').value.trim();
+            const password = document.getElementById('signupPassword').value;
+            if (npwp.length !== 16) return alert("NIK/NPWP harus 16 digit!");
+            try {
+                const userCred = await createUserWithEmailAndPassword(auth, npwpToEmail(npwp), password);
+                const initialData = buildDefaultState(npwp, namaUsaha);
+                initialData.stores[0].profile.phone = phone;
+                currentLocalKey = getLocalStorageKey(userCred.user.uid);
+                window.appState = initialData;
+                saveLocalState();
+                if (db) await setDoc(doc(db, "users", userCred.user.uid), { ...initialData, updatedAt: Date.now() });
+                fetchRealUserCount();
+                alert("Pendaftaran berhasil!");
+            } catch (err) { alert("Gagal mendaftar: " + err.message); }
+        };
+
+        window.handleForgot = async function(e) {
+            e.preventDefault();
+            const npwp = document.getElementById('forgotNpwp').value.trim();
+            if (npwp.length !== 16) return alert("NIK/NPWP harus 16 digit!");
+            try {
+                await sendPasswordResetEmail(auth, npwpToEmail(npwp));
+                alert("Instruksi reset password dikirim.");
+                window.showAuthPage('login');
+            } catch (err) { alert("Reset gagal: " + err.message); }
+        };
+
+        window.handleLogout = async function() {
+            if (confirm("Keluar dari akun?")) {
+                if (cloudSaveTimer) clearTimeout(cloudSaveTimer);
+                if (auth) await signOut(auth);
+                if (currentLocalKey) localStorage.removeItem(currentLocalKey);
+                location.reload();
+            }
+        };
 
         /* FUNGSI TOGGLE MODE (SEMBUNYIKAN TOMBOL XML DJP JIKA MODE PERORANGAN) */
         window.switchEntityMode = function(mode) {
