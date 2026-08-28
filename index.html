@@ -2,39 +2,45 @@
 const SOURCE='https://raw.githubusercontent.com/apppun/apppun/3fc80203bf66b2622bc775a207a42811198cdacb/index.html';
 const SUPABASE_URL='https://rxkumheztyyamchhejlk.supabase.co';
 const SUPABASE_KEY='sb_publishable_cN9rnx7YGQm8a-dfxMQCgw_6Ho1yrzj';
-try {
- const src=await (await fetch(SOURCE,{cache:'no-store'})).text();
- const parser=new DOMParser(), doc=parser.parseFromString(src,'text/html');
- const scripts=[...doc.querySelectorAll('script[type="module"]')]; if(!scripts.length) throw new Error('App source module not found');
- let appScript=scripts[0].textContent;
- const start=appScript.indexOf('        import { initializeApp }'), end=appScript.indexOf('        const LOCAL_STORAGE_PREFIX');
- if(start<0||end<0) throw new Error('Legacy backend block not found');
- const backend=`
+const src=await (await fetch(SOURCE,{cache:'no-store'})).text();
+const parser=new DOMParser(); const doc=parser.parseFromString(src,'text/html');
+const scripts=[...doc.querySelectorAll('script[type="module"]')];
+if(!scripts.length) throw new Error('App source module not found');
+let appScript=scripts[0].textContent;
+const start=appScript.indexOf('        import { initializeApp }');
+const end=appScript.indexOf('        const LOCAL_STORAGE_PREFIX');
+if(start<0||end<0) throw new Error('Legacy backend block not found');
+const backend=`
         import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-        const supabase=createClient("${SUPABASE_URL}","${SUPABASE_KEY}",{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
-        const auth=supabase.auth; const db={__supabase:true};
-        const npwpToEmail=npwp=>\`${'${'}npwp.trim()}@umkm-pajak.id\`;
-        const authError=err=>err?.message||err?.error_description||'Terjadi kesalahan autentikasi.';
-        const signInWithEmailAndPassword=async(_,email,password)=>{const {data,error}=await supabase.auth.signInWithPassword({email,password});if(error)throw error;return {user:data.user,session:data.session};};
-        const createUserWithEmailAndPassword=async(_,email,password,options={})=>{const {data,error}=await supabase.auth.signUp({email,password,options});if(error)throw error;return {user:data.user,session:data.session};};
-        const signOut=async()=>{const {error}=await supabase.auth.signOut();if(error)throw error;};
-        const onAuthStateChanged=(_,callback)=>{let stopped=false;supabase.auth.getSession().then(({data,error})=>{if(!stopped&&!error)callback(data.session?.user??null)});const {data}=supabase.auth.onAuthStateChange((_event,session)=>{if(!stopped)callback(session?.user??null)});return()=>{stopped=true;data.subscription.unsubscribe()};};
-        const sendPasswordResetEmail=async(_,email)=>{const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin});if(error)throw error;};
-        const getCountFromServer=async()=>{const {data,error}=await supabase.rpc('get_public_user_count');if(error)throw error;return {data:()=>({count:Number(data||0)})};};
-        const doc=(_,collectionName,id)=>({collectionName,id}); const collection=(_,collectionName)=>({collectionName});
-        const setDoc=async(ref,payload)=>{const state={...payload};delete state.updatedAt;const {error}=await supabase.from('app_state').upsert({user_id:ref.id,state,updated_at:new Date().toISOString()},{onConflict:'user_id'});if(error)throw error;};
-        const onSnapshot=(ref,callback,onError)=>{let active=true;supabase.from('app_state').select('state,updated_at').eq('user_id',ref.id).maybeSingle().then(({data,error})=>{if(!active)return;if(error){onError?.(error);return}callback({exists:()=>!!data,data:()=>data?.state||{}})}).catch(onError);const channel=supabase.channel('apppun-state-'+ref.id).on('postgres_changes',{event:'*',schema:'public',table:'app_state',filter:'user_id=eq.'+ref.id},payload=>{if(active&&payload.new?.state)callback({exists:()=>true,data:()=>payload.new.state})}).subscribe();return()=>{active=false;supabase.removeChannel(channel)};};
+        const supabase = createClient("${SUPABASE_URL}", "${SUPABASE_KEY}", { auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true } });
+        const auth = supabase.auth;
+        const db = { __supabase:true };
+        const doc = (_db, collectionName, id) => ({ collectionName, id });
+        const collection = (_db, collectionName) => ({ collectionName });
+        const signInWithEmailAndPassword = async (_auth,email,password) => { const {data,error}=await supabase.auth.signInWithPassword({email,password}); if(error) throw error; return {user:data.user}; };
+        const createUserWithEmailAndPassword = async (_auth,email,password,metadata={}) => { const {data,error}=await supabase.auth.signUp({email,password,options:{data:metadata}}); if(error) throw error; return {user:data.user,session:data.session}; };
+        const signOut = async () => { const {error}=await supabase.auth.signOut(); if(error) throw error; };
+        const onAuthStateChanged = (_auth,callback) => { let active=true; supabase.auth.getSession().then(({data})=>{if(active) callback(data.session?.user||null);}); const {data}=supabase.auth.onAuthStateChange((_event,session)=>{if(active) callback(session?.user||null);}); return ()=>{active=false;data.subscription.unsubscribe();}; };
+        const sendPasswordResetEmail = async (_auth,email) => { const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin}); if(error) throw error; };
+        const getCountFromServer = async () => { const {data,error}=await supabase.rpc('get_public_user_count'); if(error) throw error; return {data:()=>({count:Number(data||0)})}; };
+        const setDoc = async (ref,payload) => { if(ref.collectionName!=='users') throw new Error('Unsupported collection'); const state={...payload}; delete state.updatedAt; const {error}=await supabase.from('app_state').upsert({user_id:ref.id,state,updated_at:new Date().toISOString()},{onConflict:'user_id'}); if(error) throw error; };
+        const onSnapshot = (ref,callback,onError) => { let active=true; supabase.from('app_state').select('state,updated_at').eq('user_id',ref.id).maybeSingle().then(({data,error})=>{if(!active)return;if(error){onError?.(error);return;}callback({exists:()=>!!data,data:()=>data?.state||{}})}).catch(onError); const channel=supabase.channel('app-state-'+ref.id).on('postgres_changes',{event:'*',schema:'public',table:'app_state',filter:'user_id=eq.'+ref.id},payload=>{if(active&&payload.new?.state)callback({exists:()=>true,data:()=>payload.new.state})}).subscribe(); return ()=>{active=false;supabase.removeChannel(channel)}; };
 `;
- appScript=appScript.slice(0,start)+backend+appScript.slice(end);
- const cs=appScript.indexOf('        async function fetchRealUserCount() {'), ce=appScript.indexOf('        function getActiveStore()',cs);
- appScript=appScript.slice(0,cs)+`        async function fetchRealUserCount(){const labels=document.querySelectorAll('.real-user-count-label');try{const snapshot=await getCountFromServer();const formatted=new Intl.NumberFormat('id-ID').format(snapshot.data().count);labels.forEach(el=>el.textContent=formatted+' Wajib Pajak Terdaftar')}catch(err){console.error('Supabase user count error:',err);labels.forEach(el=>el.textContent='0 Wajib Pajak Terdaftar')}}\n\n        `+appScript.slice(ce);
- const as=appScript.indexOf('        if (auth) {'), ae=appScript.indexOf('        window.saveDataToCloud = function()',as);
- const authBlock=`        onAuthStateChanged(auth,(user)=>{if(cloudSaveTimer){clearTimeout(cloudSaveTimer);cloudSaveTimer=null}fetchRealUserCount();if(user){currentUser=user;const npwp=(user.email||'').split('@')[0];currentLocalKey=getLocalStorageKey(user.id);document.getElementById('authOverlay').style.display='none';document.getElementById('displayUserNpwp').textContent='NPWP: '+npwp;document.getElementById('nomorNPWP').value=npwp;listenToCloudData(user.id,npwp)}else{if(unsubscribeRealtime){unsubscribeRealtime();unsubscribeRealtime=null}currentUser=null;currentLocalKey=null;window.appState=defaultState;document.getElementById('authOverlay').style.display='flex';window.showAuthPage('login');setSyncIndicatorStatus(false)}});\n\n        function listenToCloudData(uid,npwp){if(unsubscribeRealtime){unsubscribeRealtime();unsubscribeRealtime=null}setSyncIndicatorStatus(true);const ref=doc(db,'users',uid);unsubscribeRealtime=onSnapshot(ref,snap=>{setSyncIndicatorStatus(false);if(snap.exists()){isRemoteUpdate=true;window.appState=snap.data();saveLocalState();initUI();isRemoteUpdate=false}else{const fresh=buildDefaultState(npwp);isRemoteUpdate=true;window.appState=fresh;saveLocalState();initUI();isRemoteUpdate=false;setDoc(ref,fresh).catch(console.error)}},err=>{console.error('Supabase sync error:',err);setSyncIndicatorStatus(false);try{window.appState=JSON.parse(localStorage.getItem(currentLocalKey))||buildDefaultState(npwp)}catch{window.appState=buildDefaultState(npwp)}initUI()});}\n\n`;
- appScript=appScript.slice(0,as)+authBlock+appScript.slice(ae);
- const ss=appScript.indexOf('        window.saveDataToCloud = function()'), se=appScript.indexOf('        window.showAuthPage = function(page)',ss);
- appScript=appScript.slice(0,ss)+`        window.saveDataToCloud=function(){saveLocalState();if(isRemoteUpdate||!currentUser)return;setSyncIndicatorStatus(true);if(cloudSaveTimer)clearTimeout(cloudSaveTimer);cloudSaveTimer=setTimeout(async()=>{cloudSaveTimer=null;if(!currentUser)return;try{await setDoc(doc(db,'users',currentUser.id),{...window.appState,updatedAt:Date.now()});setSyncIndicatorStatus(false)}catch(err){console.error('Supabase cloud save error:',err);setSyncIndicatorStatus(false)}},700)};\n\n`+appScript.slice(se);
- const hs=appScript.indexOf('        window.handleLogin = async function(e)'), he=appScript.indexOf('        /* FUNGSI TOGGLE MODE',hs);
- appScript=appScript.slice(0,hs)+`        window.handleLogin=async function(e){e.preventDefault();const npwp=document.getElementById('loginNpwp').value.trim().replace(/\\D/g,'');const password=document.getElementById('loginPassword').value;if(npwp.length!==16)return alert('NIK/NPWP harus 16 digit!');if(!password)return alert('Password wajib diisi.');try{await signInWithEmailAndPassword(auth,npwpToEmail(npwp),password)}catch(err){alert('Gagal masuk: '+authError(err))}};\n        window.handleSignup=async function(e){e.preventDefault();const npwp=document.getElementById('signupNpwp').value.trim().replace(/\\D/g,'');const namaUsaha=document.getElementById('signupNamaUsaha').value.trim();const phone=document.getElementById('signupPhone').value.trim();const password=document.getElementById('signupPassword').value;if(npwp.length!==16)return alert('NIK/NPWP harus 16 digit!');if(password.length<6)return alert('Password minimal 6 karakter.');try{const r=await createUserWithEmailAndPassword(auth,npwpToEmail(npwp),password,{data:{npwp,nama_usaha:namaUsaha,phone}});if(!r.session){alert('Akun berhasil dibuat. Silakan verifikasi email terlebih dahulu, lalu masuk.');window.showAuthPage('login');return}const initial=buildDefaultState(npwp,namaUsaha);initial.stores[0].profile.phone=phone;currentUser=r.user;currentLocalKey=getLocalStorageKey(r.user.id);window.appState=initial;saveLocalState();await setDoc(doc(db,'users',r.user.id),initial);fetchRealUserCount();alert('Pendaftaran berhasil!')}catch(err){alert('Gagal mendaftar: '+authError(err))}};\n        window.handleForgot=async function(e){e.preventDefault();const npwp=document.getElementById('forgotNpwp').value.trim().replace(/\\D/g,'');if(npwp.length!==16)return alert('NIK/NPWP harus 16 digit!');try{await sendPasswordResetEmail(auth,npwpToEmail(npwp));alert('Instruksi reset password dikirim.');window.showAuthPage('login')}catch(err){alert('Reset gagal: '+authError(err))}};\n\n`+appScript.slice(he);
- for(const el of scripts)el.remove(); const ns=doc.createElement('script');ns.type='module';ns.textContent=appScript;doc.body.appendChild(ns);document.documentElement.replaceWith(doc.documentElement);
-} catch(err){document.getElementById('boot').textContent='AppPUN gagal dimuat: '+(err?.message||err);console.error(err)}
+appScript=appScript.slice(0,start)+backend+appScript.slice(end);
+const countStart=appScript.indexOf('        async function fetchRealUserCount() {');
+const countEnd=appScript.indexOf('        function getActiveStore()',countStart);
+if(countStart<0||countEnd<0) throw new Error('User count function not found');
+appScript=appScript.slice(0,countStart)+`        async function fetchRealUserCount() { const labels=document.querySelectorAll('.real-user-count-label'); labels.forEach(el=>el.textContent='Memuat total pengguna…'); try { const snapshot=await Promise.race([getCountFromServer(),new Promise((_,reject)=>setTimeout(()=>reject(new Error('timeout')),5000))]); const formatted=new Intl.NumberFormat('id-ID').format(Number(snapshot.data().count||0)); labels.forEach(el=>el.textContent=formatted+' Wajib Pajak Terdaftar'); } catch(err) { console.warn('Supabase user count failed:',err); labels.forEach(el=>el.textContent='0 Wajib Pajak Terdaftar'); } }
+
+`+appScript.slice(countEnd);
+const authStart=appScript.indexOf('        if (auth) {');
+if(authStart<0) throw new Error('Auth start not found');
+appScript=appScript.slice(0,authStart)+`        document.addEventListener('click',(event)=>{ const link=event.target.closest('a'); if(!link)return; const text=(link.textContent||'').trim(); let page=link.dataset.authPage; if(!page&&text.includes('Daftar Akun Baru'))page='signup'; if(!page&&text.includes('Lupa Password'))page='forgot'; if(!page&&text.includes('Masuk di sini'))page='login'; if(page){ event.preventDefault(); event.stopPropagation(); const open=()=>typeof window.showAuthPage==='function'?window.showAuthPage(page):setTimeout(open,0); open(); } });
+
+        if (auth) {`+appScript.slice(authStart+'        if (auth) {'.length);
+appScript=appScript.replace('const userCred = await createUserWithEmailAndPassword(auth, npwpToEmail(npwp), password);','const userCred = await createUserWithEmailAndPassword(auth, npwpToEmail(npwp), password, {npwp,namaUsaha,phone});');
+appScript=appScript.replace('alert("Pendaftaran berhasil!");','alert(userCred.session ? "Pendaftaran berhasil! Anda langsung masuk ke AppPUN." : "Pendaftaran berhasil! Silakan cek email untuk verifikasi akun sebelum masuk.");');
+for(const el of scripts) el.remove();
+const newScript=doc.createElement('script');newScript.type='module';newScript.textContent=appScript;doc.body.appendChild(newScript);
+document.documentElement.replaceWith(doc.documentElement);
 </script></body></html>
