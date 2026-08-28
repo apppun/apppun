@@ -6,41 +6,40 @@ const src=await (await fetch(SOURCE,{cache:'no-store'})).text();
 const parser=new DOMParser(); const doc=parser.parseFromString(src,'text/html');
 const scripts=[...doc.querySelectorAll('script[type="module"]')];
 if(!scripts.length) throw new Error('App source module not found');
-let appScript=scripts[0].textContent;
-const start=appScript.indexOf('        import { initializeApp }');
-const end=appScript.indexOf('        const LOCAL_STORAGE_PREFIX');
-if(start<0||end<0) throw new Error('Legacy backend block not found');
+let app=scripts[0].textContent;
+const legacyStart=app.indexOf('        import { initializeApp }');
+const legacyEnd=app.indexOf('        const LOCAL_STORAGE_PREFIX');
+if(legacyStart<0||legacyEnd<0) throw new Error('Legacy backend block not found');
 const backend=`
         import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-        const supabase = createClient("${SUPABASE_URL}", "${SUPABASE_KEY}", { auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true } });
-        const auth = supabase.auth;
-        const db = { __supabase:true };
-        const doc = (_db, collectionName, id) => ({ collectionName, id });
-        const collection = (_db, collectionName) => ({ collectionName });
-        const signInWithEmailAndPassword = async (_auth,email,password) => { const {data,error}=await supabase.auth.signInWithPassword({email,password}); if(error) throw error; return {user:data.user}; };
-        const createUserWithEmailAndPassword = async (_auth,email,password,metadata={}) => { const {data,error}=await supabase.auth.signUp({email,password,options:{data:metadata}}); if(error) throw error; return {user:data.user,session:data.session}; };
-        const signOut = async () => { const {error}=await supabase.auth.signOut(); if(error) throw error; };
-        const onAuthStateChanged = (_auth,callback) => { let active=true; supabase.auth.getSession().then(({data})=>{if(active) callback(data.session?.user||null);}); const {data}=supabase.auth.onAuthStateChange((_event,session)=>{if(active) callback(session?.user||null);}); return ()=>{active=false;data.subscription.unsubscribe();}; };
-        const sendPasswordResetEmail = async (_auth,email) => { const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin}); if(error) throw error; };
-        const getCountFromServer = async () => { const {data,error}=await supabase.rpc('get_public_user_count'); if(error) throw error; return {data:()=>({count:Number(data||0)})}; };
-        const setDoc = async (ref,payload) => { if(ref.collectionName!=='users') throw new Error('Unsupported collection'); const state={...payload}; delete state.updatedAt; const {error}=await supabase.from('app_state').upsert({user_id:ref.id,state,updated_at:new Date().toISOString()},{onConflict:'user_id'}); if(error) throw error; };
-        const onSnapshot = (ref,callback,onError) => { let active=true; supabase.from('app_state').select('state,updated_at').eq('user_id',ref.id).maybeSingle().then(({data,error})=>{if(!active)return;if(error){onError?.(error);return;}callback({exists:()=>!!data,data:()=>data?.state||{}})}).catch(onError); const channel=supabase.channel('app-state-'+ref.id).on('postgres_changes',{event:'*',schema:'public',table:'app_state',filter:'user_id=eq.'+ref.id},payload=>{if(active&&payload.new?.state)callback({exists:()=>true,data:()=>payload.new.state})}).subscribe(); return ()=>{active=false;supabase.removeChannel(channel)}; };
+        const supabase=createClient("${SUPABASE_URL}","${SUPABASE_KEY}",{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+        const auth=supabase.auth; const db={__supabase:true};
+        const npwpToEmail=npwp=>String(npwp||'').replace(/\\s+/g,'')+'@umkm-pajak.id';
+        const doc=(_db,collectionName,id)=>({collectionName,id});
+        const collection=(_db,collectionName)=>({collectionName});
+        const setDoc=async(ref,payload)=>{if(ref.collectionName!=='users')throw new Error('Unsupported collection');const state={...payload};delete state.updatedAt;const {error}=await supabase.from('app_state').upsert({user_id:ref.id,state,updated_at:new Date().toISOString()},{onConflict:'user_id'});if(error)throw error;};
+        const onSnapshot=(ref,callback,onError)=>{let active=true;supabase.from('app_state').select('state,updated_at').eq('user_id',ref.id).maybeSingle().then(({data,error})=>{if(!active)return;if(error){onError?.(error);return;}callback({exists:()=>!!data,data:()=>data?.state||{}})}).catch(onError);const channel=supabase.channel('app-state-'+ref.id).on('postgres_changes',{event:'*',schema:'public',table:'app_state',filter:'user_id=eq.'+ref.id},payload=>{if(active&&payload.new?.state)callback({exists:()=>true,data:()=>payload.new.state})}).subscribe();return()=>{active=false;supabase.removeChannel(channel)};};
+        const getCountFromServer=async()=>{const {data,error}=await supabase.rpc('get_public_user_count');if(error)throw error;return {data:()=>({count:Number(data||0)})};};
 `;
-appScript=appScript.slice(0,start)+backend+appScript.slice(end);
-const countStart=appScript.indexOf('        async function fetchRealUserCount() {');
-const countEnd=appScript.indexOf('        function getActiveStore()',countStart);
-if(countStart<0||countEnd<0) throw new Error('User count function not found');
-appScript=appScript.slice(0,countStart)+`        async function fetchRealUserCount() { const labels=document.querySelectorAll('.real-user-count-label'); labels.forEach(el=>el.textContent='Memuat total pengguna…'); try { const snapshot=await Promise.race([getCountFromServer(),new Promise((_,reject)=>setTimeout(()=>reject(new Error('timeout')),5000))]); const formatted=new Intl.NumberFormat('id-ID').format(Number(snapshot.data().count||0)); labels.forEach(el=>el.textContent=formatted+' Wajib Pajak Terdaftar'); } catch(err) { console.warn('Supabase user count failed:',err); labels.forEach(el=>el.textContent='0 Wajib Pajak Terdaftar'); } }
+app=app.slice(0,legacyStart)+backend+app.slice(legacyEnd);
+const navStart=app.indexOf('        // Auth navigation:');
+const ifStart=app.indexOf('        if (auth) {',navStart);
+const listenStart=app.indexOf('        function listenToCloudData',ifStart);
+if(ifStart<0||listenStart<0) throw new Error('Auth bootstrap markers not found');
+const authBootstrap=`        document.addEventListener('click',e=>{const a=e.target.closest('#authOverlay a');if(!a)return;const t=(a.textContent||'').replace(/\\s+/g,' ').trim();let page=a.dataset.authPage||'';if(!page&&t.includes('Daftar Akun Baru'))page='signup';if(!page&&t.includes('Lupa Password'))page='forgot';if(!page&&t.includes('Masuk di sini'))page='login';if(page){e.preventDefault();e.stopImmediatePropagation();window.showAuthPage(page);}},true);
+        async function applyAuthSession(user){if(cloudSaveTimer){clearTimeout(cloudSaveTimer);cloudSaveTimer=null;}fetchRealUserCount();const overlay=document.getElementById('authOverlay');if(!user){if(unsubscribeRealtime){unsubscribeRealtime();unsubscribeRealtime=null;}currentUser=null;currentLocalKey=null;window.appState=defaultState;overlay.style.display='flex';window.showAuthPage('login');return;}currentUser=user;const npwp=(user.user_metadata?.npwp||user.email?.split('@')[0]||'').trim();currentLocalKey=getLocalStorageKey(user.id);overlay.style.display='none';const d=document.getElementById('displayUserNpwp'),n=document.getElementById('nomorNPWP');if(d)d.textContent='NPWP: '+npwp;if(n)n.value=npwp;listenToCloudData(user.id,npwp);}
+        async function bootstrapAuth(){try{const {data,error}=await auth.getSession();if(error)throw error;await applyAuthSession(data.session?.user||null);}catch(e){console.error('Auth init failed',e);applyAuthSession(null);}auth.onAuthStateChange((_event,session)=>applyAuthSession(session?.user||null));}
+        bootstrapAuth();
 
-`+appScript.slice(countEnd);
-const authStart=appScript.indexOf('        if (auth) {');
-if(authStart<0) throw new Error('Auth start not found');
-appScript=appScript.slice(0,authStart)+`        document.addEventListener('click',(event)=>{ const link=event.target.closest('a'); if(!link)return; const text=(link.textContent||'').trim(); let page=link.dataset.authPage; if(!page&&text.includes('Daftar Akun Baru'))page='signup'; if(!page&&text.includes('Lupa Password'))page='forgot'; if(!page&&text.includes('Masuk di sini'))page='login'; if(page){ event.preventDefault(); event.stopPropagation(); const open=()=>typeof window.showAuthPage==='function'?window.showAuthPage(page):setTimeout(open,0); open(); } });
-
-        if (auth) {`+appScript.slice(authStart+'        if (auth) {'.length);
-appScript=appScript.replace('const userCred = await createUserWithEmailAndPassword(auth, npwpToEmail(npwp), password);','const userCred = await createUserWithEmailAndPassword(auth, npwpToEmail(npwp), password, {npwp,namaUsaha,phone});');
-appScript=appScript.replace('alert("Pendaftaran berhasil!");','alert(userCred.session ? "Pendaftaran berhasil! Anda langsung masuk ke AppPUN." : "Pendaftaran berhasil! Silakan cek email untuk verifikasi akun sebelum masuk.");');
-for(const el of scripts) el.remove();
-const newScript=doc.createElement('script');newScript.type='module';newScript.textContent=appScript;doc.body.appendChild(newScript);
-document.documentElement.replaceWith(doc.documentElement);
+`;
+app=app.slice(0,navStart)+authBootstrap+app.slice(listenStart);
+app=app.replace('await signInWithEmailAndPassword(auth, npwpToEmail(npwp), password);','const {error}=await auth.signInWithPassword({email:npwpToEmail(npwp),password}); if(error) throw error;');
+app=app.replace('const userCred = await createUserWithEmailAndPassword(auth, npwpToEmail(npwp), password, { npwp, namaUsaha, phone });','const {data:userCred,error}=await auth.signUp({email:npwpToEmail(npwp),password,options:{data:{npwp,namaUsaha,phone}}}); if(error) throw error;');
+app=app.replace('await sendPasswordResetEmail(auth, npwpToEmail(npwp));','const {error}=await auth.resetPasswordForEmail(npwpToEmail(npwp),{redirectTo:window.location.origin+window.location.pathname}); if(error) throw error;');
+app=app.replace('if (auth) await signOut(auth);','const {error}=await auth.signOut({scope:"local"}); if(error) throw error;');
+const show='window.showAuthPage = function(page) {';
+const si=app.indexOf(show);
+if(si>=0){const sj=app.indexOf('        };',si)+11;const repl=`window.showAuthPage=function(page){const ids=['loginCard','signupCard','forgotCard'];ids.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});const target=document.getElementById(page+'Card');if(target)target.style.display='block';};\n`;app=app.slice(0,si)+repl+app.slice(sj);}
+for(const el of scripts)el.remove();
+const ns=doc.createElement('script');ns.type='module';ns.textContent=app;doc.body.appendChild(ns);document.documentElement.replaceWith(doc.documentElement);
 </script></body></html>
