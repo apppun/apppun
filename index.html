@@ -30,7 +30,10 @@ const backend=`
         const onSnapshot = (ref,callback,onError) => { let active=true; supabase.from('app_state').select('state,updated_at').eq('user_id',ref.id).maybeSingle().then(({data,error})=>{if(!active)return;if(error)return onError?.(error);callback({exists:()=>!!data,data:()=>data?.state||{}})}).catch(e=>onError?.(e)); const channel=supabase.channel('app-state-'+ref.id).on('postgres_changes',{event:'*',schema:'public',table:'app_state',filter:'user_id=eq.'+ref.id},payload=>{if(active&&payload.new?.state)callback({exists:()=>true,data:()=>payload.new.state})}).subscribe(); return ()=>{active=false;supabase.removeChannel(channel)}; };
 `;
 appScript=appScript.slice(0,start)+backend+appScript.slice(end);
-appScript=appScript.replace(/        async function fetchRealUserCount\(\) \{[\s\S]*?\n        \}\n\n        function getActiveStore\(\)/,`        async function fetchRealUserCount() {
+const countStart=appScript.indexOf('        async function fetchRealUserCount() {');
+const countEnd=appScript.indexOf('        function getActiveStore()',countStart);
+if(countStart<0||countEnd<0) throw new Error('User count function not found');
+appScript=appScript.slice(0,countStart)+`        async function fetchRealUserCount() {
             const labels = document.querySelectorAll('.real-user-count-label');
             try {
                 const snapshot = await getCountFromServer(collection(db, 'users'));
@@ -42,8 +45,10 @@ appScript=appScript.replace(/        async function fetchRealUserCount\(\) \{[\s
             }
         }
 
-        function getActiveStore()`);
-appScript=appScript.replace(/        if \(auth\) \{/,`        document.addEventListener('click', (event) => {
+        `+appScript.slice(countEnd);
+const authStart=appScript.indexOf('        if (auth) {');
+if(authStart<0) throw new Error('Auth start not found');
+appScript=appScript.slice(0,authStart)+`        document.addEventListener('click', (event) => {
             const link = event.target.closest('a');
             if (!link) return;
             const text = link.textContent.trim();
@@ -54,7 +59,7 @@ appScript=appScript.replace(/        if \(auth\) \{/,`        document.addEventL
             if (page) { event.preventDefault(); window.showAuthPage(page); }
         });
 
-        if (auth) {`);
+`+appScript.slice(authStart);
 for(const el of scripts) el.remove();
 const newScript=doc.createElement('script');newScript.type='module';newScript.textContent=appScript;doc.body.appendChild(newScript);
 document.documentElement.replaceWith(doc.documentElement);
