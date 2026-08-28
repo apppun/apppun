@@ -46,20 +46,7 @@ appScript=appScript.slice(0,countStart)+`        async function fetchRealUserCou
         }
 
         `+appScript.slice(countEnd);
-const authStart=appScript.indexOf('        if (auth) {');
-if(authStart<0) throw new Error('Auth start not found');
-appScript=appScript.slice(0,authStart)+`        document.addEventListener('click', (event) => {
-            const link = event.target.closest('a');
-            if (!link) return;
-            const text = link.textContent.trim();
-            let page = link.dataset.authPage;
-            if (!page && text.includes('Daftar Akun Baru')) page = 'signup';
-            else if (!page && text.includes('Lupa Password')) page = 'forgot';
-            else if (!page && text.includes('Masuk di sini')) page = 'login';
-            if (page) { event.preventDefault(); window.showAuthPage(page); }
-        });
-
-`+appScript.slice(authStart);
+appScript=appScript.replace(/        if \(auth\) \{/,'        document.addEventListener(\'click\', (event) => {\n            const link = event.target.closest(\'a\');\n            if (!link) return;\n            const text = link.textContent.trim();\n            let page = link.dataset.authPage;\n            if (!page && text.includes(\'Daftar Akun Baru\')) page = \'signup\';\n            else if (!page && text.includes(\'Lupa Password\')) page = \'forgot\';\n            else if (!page && text.includes(\'Masuk di sini\')) page = \'login\';\n            if (page) { event.preventDefault(); window.showAuthPage(page); }\n        });\n\n        if (auth) {');
 for(const el of scripts) el.remove();
 const newScript=doc.createElement('script');newScript.type='module';newScript.textContent=appScript;doc.body.appendChild(newScript);
 document.documentElement.replaceWith(doc.documentElement);
