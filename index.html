@@ -17,6 +17,7 @@ if(start<0||end<0) throw new Error('Backend block missing');
 const bridge=`
         import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
         const supabase = createClient("${URL}", "${KEY}");
+        const mapUser = (u) => u ? { ...u, uid: u.id } : null;
         const initializeApp = (config) => config;
         const getAuth = () => supabase.auth;
         const getFirestore = () => ({ __supabase: true });
@@ -27,17 +28,17 @@ const bridge=`
         const signInWithEmailAndPassword = async (_auth, email, password) => {
             const { data, error } = await supabase.auth.signInWithPassword({ email, password });
             if (error) throw error;
-            return { user: data.user };
+            return { user: mapUser(data.user) };
         };
         const createUserWithEmailAndPassword = async (_auth, email, password) => {
             const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { npwp: email.split('@')[0] } } });
             if (error) throw error;
-            return { user: data.user };
+            return { user: mapUser(data.user) };
         };
         const signOut = async () => { const { error } = await supabase.auth.signOut(); if (error) throw error; };
         const onAuthStateChanged = (_auth, callback) => {
-            supabase.auth.getSession().then(({data}) => callback(data.session?.user || null));
-            const { data } = supabase.auth.onAuthStateChange((_event, session) => callback(session?.user || null));
+            supabase.auth.getSession().then(({data}) => callback(mapUser(data.session?.user)));
+            const { data } = supabase.auth.onAuthStateChange((_event, session) => callback(mapUser(session?.user)));
             return () => data.subscription.unsubscribe();
         };
         const sendPasswordResetEmail = async (_auth, email) => {
